@@ -39,7 +39,7 @@ void preprocess_file(const char* input_file, const char* output_file) {
         c = remove_accent(c);
         
         // Writing letters (a-z, ñ) and spaces
-        if ((c >= L'a' && c <= L'z') || c == L'ñ' || c == L' ') {
+        if ((c >= L'a' && c <= L'z') || c == L'ñ' || c == L' ' || c == L'\n') {
             fputwc(c, out);
         }
     }
