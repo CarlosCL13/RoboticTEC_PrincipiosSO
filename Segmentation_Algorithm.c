@@ -1,32 +1,49 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
-void Segmentation_Algorithm() {
-    const char* input_filename = "output_text.txt";
-    const char* output_names[] = {"node1_txt", "node2_txt", "node3_txt"};
-    
+void Segmentation_Algorithm(const char* input_filename) {
+    const char* output_names[] = {"node1.txt", "node2.txt", "node3.txt"};
     FILE *input_file = fopen(input_filename, "r");
     if (!input_file) {
         perror("Error opening input file");
         exit(EXIT_FAILURE);
     }
 
-    // Contar el número total de líneas
-    int total_lines = 0;
-    int ch;
-    while ((ch = fgetc(input_file)) != EOF) {
-        if (ch == '\n') total_lines++;
-    }
-    // Sumar la última línea si no termina con \n
-    if (ch == EOF && fseek(input_file, -1, SEEK_END)) {
-        if (fgetc(input_file) != '\n') total_lines++;
-    }
+    // Leer todo el archivo en memoria
+    fseek(input_file, 0, SEEK_END);
+    long filesize = ftell(input_file);
     rewind(input_file);
 
-    // Calcular líneas por parte
-    int lines_per_part = total_lines / 3;
-    int remainder = total_lines % 3;
+    char *file_content = malloc(filesize + 1);
+    if (!file_content) {
+        perror("Memory allocation failed");
+        fclose(input_file);
+        exit(EXIT_FAILURE);
+    }
+    fread(file_content, 1, filesize, input_file);
+    file_content[filesize] = '\0';
+    fclose(input_file);
+
+    // Contar palabras
+    int total_words = 0;
+    char *copy = strdup(file_content);
+    char *token = strtok(copy, " \t\r\n");
+    while (token) {
+        total_words++;
+        token = strtok(NULL, " \t\r\n");
+    }
+    free(copy);
+
+    // Calcular palabras por parte
+    int words_per_part = total_words / 3;
+    int remainder = total_words % 3;
+    int part_words[3] = {
+        words_per_part + (remainder > 0 ? 1 : 0),
+        words_per_part + (remainder > 1 ? 1 : 0),
+        words_per_part
+    };
 
     // Abrir archivos de salida
     FILE *output_files[3];
@@ -34,52 +51,52 @@ void Segmentation_Algorithm() {
         output_files[i] = fopen(output_names[i], "w");
         if (!output_files[i]) {
             perror("Error creating output file");
-            // Cerrar archivos ya abiertos
-            for (int j = 0; j < i; j++) {
-                fclose(output_files[j]);
-            }
-            fclose(input_file);
+            for (int j = 0; j < i; j++) fclose(output_files[j]);
+            free(file_content);
             exit(EXIT_FAILURE);
         }
     }
 
-    // Variables para el procesamiento
-    char buffer[1024];
-    int current_line = 0;
-    int part_lines[3] = {
-        lines_per_part + (remainder > 0 ? 1 : 0),
-        lines_per_part + (remainder > 1 ? 1 : 0),
-        lines_per_part
-    };
+    // Escribir palabras en los archivos, manteniendo saltos de línea originales
+    int current_part = 0, words_in_part = 0;
+    char *p = file_content;
+    while (*p) {
+        // Saltar espacios iniciales
+        while (*p && isspace(*p) && *p != '\n') p++;
 
-    // Leer y escribir líneas
-    int current_part = 0;
-    int lines_in_current_part = 0;
-    
-    while (fgets(buffer, sizeof(buffer), input_file) != NULL) {
-        fputs(buffer, output_files[current_part]);
-        lines_in_current_part++;
-        
-        // Cambiar al siguiente archivo cuando se complete la parte actual
-        if (lines_in_current_part >= part_lines[current_part] && current_part < 2) {
+        // Detectar fin de archivo
+        if (!*p) break;
+
+        // Encontrar el final de la palabra
+        char *start = p;
+        while (*p && !isspace(*p)) p++;
+        int word_len = p - start;
+
+        // Escribir la palabra en el archivo correspondiente
+        fwrite(start, 1, word_len, output_files[current_part]);
+        words_in_part++;
+
+        // Escribir el espacio o salto de línea original
+        while (*p && isspace(*p)) {
+            fputc(*p, output_files[current_part]);
+            if (*p == '\n') ; // Mantener saltos de línea
+            p++;
+            // Si hay varios espacios, los mantiene
+        }
+
+        // Cambiar de archivo si se llegó al límite de palabras
+        if (words_in_part >= part_words[current_part] && current_part < 2) {
             current_part++;
-            lines_in_current_part = 0;
+            words_in_part = 0;
         }
     }
 
-    // Cerrar archivos
-    fclose(input_file);
-    for (int i = 0; i < 3; i++) {
-        fclose(output_files[i]);
-    }
+    // Cerrar archivos y liberar memoria
+    for (int i = 0; i < 3; i++) fclose(output_files[i]);
+    free(file_content);
 
-    printf("File successfully split:\n");
-    printf("- %s (%d lines)\n", output_names[0], part_lines[0]);
-    printf("- %s (%d lines)\n", output_names[1], part_lines[1]);
-    printf("- %s (%d lines)\n", output_names[2], part_lines[2]);
-}
-
-int main() {
-    Segmentation_Algorithm();
-    return 0;
+    printf("File successfully split by words:\n");
+    printf("- %s (%d words)\n", output_names[0], part_words[0]);
+    printf("- %s (%d words)\n", output_names[1], part_words[1]);
+    printf("- %s (%d words)\n", output_names[2], part_words[2]);
 }
