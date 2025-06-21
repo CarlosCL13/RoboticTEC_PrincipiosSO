@@ -21,14 +21,14 @@ int main() {
     char buffer[BUFFER_SIZE];
 
     // Abrir archivo original para leer
-    FILE *fp_in = fopen("el_quijote.txt", "rb"); //archivo_a_enviar.txt
+    FILE *fp_in = fopen("archivo_a_enviar.txt", "rb"); //archivo_a_enviar.txt
     if (!fp_in) {
         perror("No se pudo abrir el archivo original");
         return 1;
     }
 
     // Crear archivo cifrado para escribir el contenido encriptado
-    FILE *fp_out = fopen("el_quijote_encriptado.txt", "wb");
+    FILE *fp_out = fopen("archivo_a_enviar_encriptado.txt", "wb");
     if (!fp_out) {
         perror("No se pudo crear el archivo encriptado");
         fclose(fp_in);
@@ -46,7 +46,7 @@ int main() {
     fclose(fp_out);
 
     // Abrir el archivo encriptado para enviarlo al servidor
-    fp_out = fopen("el_quijote_encriptado.txt", "rb");
+    fp_out = fopen("archivo_a_enviar_encriptado.txt", "rb");
     if (!fp_out) {
         perror("No se pudo abrir el archivo encriptado para enviar");
         return 1;

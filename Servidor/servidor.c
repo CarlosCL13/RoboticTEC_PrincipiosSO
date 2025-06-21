@@ -133,39 +133,66 @@ void *handle_client(void *arg) {
     close(client_sock);
     printf("Archivo recibido, guardado cifrado y desencriptado. Conexión cerrada.\n");
 
-    // Llamar al algoritmo de segmentación
+    // 1. Segmentar el archivo desencriptado en tres partes
     Segmentation_Algorithm("archivo_recibido.txt");
+    // Los archivos segmentados se guardan en:
+    // "Segmentados/node1.txt", "Segmentados/node2.txt", "Segmentados/node3.txt"
 
-    // Rutas de los archivos de entrada y salida
+    // 2. Esperar a que cada nodo cliente se conecte, enviarle su fragmento y recibir el conteo
+    const int node_ports[3] = {9101, 9102, 9103};
     const char* node_files[3] = {
         "Segmentados/node1.txt",
         "Segmentados/node2.txt",
         "Segmentados/node3.txt"
     };
-    
-    // Rutas de los archivos preprocesados
-    const char* proc_files[3] = {
-        "Preprocesados/node1_proc.txt",
-        "Preprocesados/node2_proc.txt",
-        "Preprocesados/node3_proc.txt"
-    };
-
-    // Rutas de los archivos de conteo
     const char* count_files[3] = {
         "Conteos/count_node1.txt",
         "Conteos/count_node2.txt",
         "Conteos/count_node3.txt"
     };
 
-    // Preprocesar los archivos y contar palabras
     for (int i = 0; i < 3; i++) {
-        preprocess_file(node_files[i], proc_files[i]);
-        count_words(proc_files[i], count_files[i]);
+        int server_sock, client_sock;
+        struct sockaddr_in server_addr, client_addr;
+        socklen_t addr_size = sizeof(client_addr);
+
+        server_sock = socket(AF_INET, SOCK_STREAM, 0);
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_addr.s_addr = INADDR_ANY;
+        server_addr.sin_port = htons(node_ports[i]);
+
+        bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+        listen(server_sock, 1);
+
+        printf("Esperando conexión de nodo %d en puerto %d...\n", i+1, node_ports[i]);
+        client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &addr_size);
+
+        // Enviar fragmento al nodo
+        FILE *fp = fopen(node_files[i], "rb");
+        char buffer[BUFFER_SIZE];
+        int bytes;
+        while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
+            send(client_sock, buffer, bytes, 0);
+        }
+        fclose(fp);
+        shutdown(client_sock, SHUT_WR); // Señal de fin de envío
+
+        // Recibir archivo de conteo del nodo
+        fp = fopen(count_files[i], "wb");
+        while ((bytes = recv(client_sock, buffer, BUFFER_SIZE, 0)) > 0) {
+            fwrite(buffer, 1, bytes, fp);
+        }
+        fclose(fp);
+
+        close(client_sock);
+        close(server_sock);
     }
-    
-    // Combinar los conteos de palabras de los tres archivos
+
+    // 3. Combinar los conteos de palabras de los tres archivos
+    // Los archivos de conteo están en:
+    // "Conteos/count_node1.txt", "Conteos/count_node2.txt", "Conteos/count_node3.txt"
     combine_counts(count_files);
-    
+
     return NULL;
 }
 
