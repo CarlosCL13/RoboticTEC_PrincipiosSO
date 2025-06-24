@@ -5,6 +5,7 @@
 #define MAX_WORD_LENGTH 100  
 #define MAX_WORDS 10000   // Cambiar si el archivo de entrada es muy grande
 
+// Estructura para almacenar una palabra y su cantidad de apariciones
 typedef struct {
     char word[MAX_WORD_LENGTH];
     int count;
@@ -21,7 +22,7 @@ int find_word(Word words[], int total, const char *target) {
 }
 
 // Función de comparación para ordenar:
-// - Descendente (mayor a menor)
+// - Descendente (mayor a menor) por cantidad
 // - Ascendente alfabéticamente si los conteos son iguales
 int compare_words(const void *a, const void *b) {
     Word *w1 = (Word *)a;
@@ -33,12 +34,13 @@ int compare_words(const void *a, const void *b) {
         return strcmp(w1->word, w2->word);
 }
 
+// Función principal para contar palabras en un archivo de entrada y guardar el resultado en un archivo de salida
 void count_words(const char *input_file, const char *output_file) {
     FILE *in = fopen(input_file, "r");
     FILE *out = fopen(output_file, "w");
 
     if (!in || !out) {
-        perror("Error opening files");
+        perror("Error al abrir los archivos");
         return;
     }
 
@@ -46,14 +48,14 @@ void count_words(const char *input_file, const char *output_file) {
     int total_words = 0;
     char current_word[MAX_WORD_LENGTH];
 
-    // Leer palabra por palabra
+    // Leer palabra por palabra del archivo de entrada
     while (fscanf(in, "%99s", current_word) == 1) {
         int index = find_word(words, total_words, current_word);
         if (index >= 0) {
             words[index].count++;
         } else {
             if (total_words >= MAX_WORDS) {
-                fprintf(stderr, "Error: word limit (%d) exceeded. Some words were skipped.\n", MAX_WORDS);
+                fprintf(stderr, "Error: se excedió el límite de palabras (%d). Algunas palabras fueron omitidas.\n", MAX_WORDS);
                 break; // Salir del ciclo si se sobrepasa el límite
             }
             strcpy(words[total_words].word, current_word);
@@ -73,5 +75,5 @@ void count_words(const char *input_file, const char *output_file) {
     fclose(in);
     fclose(out);
 
-    printf("The output file '%s' was created successfully with %d words.\n", output_file, total_words);
+    printf("El archivo de salida '%s' fue creado exitosamente con %d palabras.\n", output_file, total_words);
 }

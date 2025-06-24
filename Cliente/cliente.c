@@ -20,14 +20,14 @@ int main() {
     struct sockaddr_in server_addr;
     char buffer[BUFFER_SIZE];
 
-    // Abrir archivo original para leer
-    FILE *fp_in = fopen("archivo_a_enviar.txt", "rb"); //archivo_a_enviar.txt
+    // === 1. Abrir archivo original para leer ===
+    FILE *fp_in = fopen("archivo_a_enviar.txt", "rb"); // Cambia el nombre si usas otro archivo
     if (!fp_in) {
         perror("No se pudo abrir el archivo original");
         return 1;
     }
 
-    // Crear archivo cifrado para escribir el contenido encriptado
+    // === 2. Crear archivo cifrado para escribir el contenido encriptado ===
     FILE *fp_out = fopen("archivo_a_enviar_encriptado.txt", "wb");
     if (!fp_out) {
         perror("No se pudo crear el archivo encriptado");
@@ -36,7 +36,7 @@ int main() {
     }
 
     int bytes;
-    // Leer el archivo original, cifrarlo y escribirlo en el archivo encriptado
+    // === 3. Leer el archivo original, cifrarlo y escribirlo en el archivo encriptado ===
     while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp_in)) > 0) {
         xor_crypt(buffer, bytes, XOR_KEY); // Encriptar el bloque leído
         fwrite(buffer, 1, bytes, fp_out);  // Escribir el bloque encriptado
@@ -45,25 +45,25 @@ int main() {
     fclose(fp_in);
     fclose(fp_out);
 
-    // Abrir el archivo encriptado para enviarlo al servidor
+    // === 4. Abrir el archivo encriptado para enviarlo al servidor ===
     fp_out = fopen("archivo_a_enviar_encriptado.txt", "rb");
     if (!fp_out) {
         perror("No se pudo abrir el archivo encriptado para enviar");
         return 1;
     }
 
-    // Crear el socket
+    // === 5. Crear el socket ===
     sock = socket(AF_INET, SOCK_STREAM, 0);
 
-    // Configurar la dirección del servidor
+    // === 6. Configurar la dirección del servidor ===
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(PORT);
     inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
 
-    // Conectar al servidor
+    // === 7. Conectar al servidor ===
     connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
 
-    // Leer el archivo encriptado y enviarlo al servidor por el socket
+    // === 8. Leer el archivo encriptado y enviarlo al servidor por el socket ===
     while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp_out)) > 0) {
         send(sock, buffer, bytes, 0);
     }

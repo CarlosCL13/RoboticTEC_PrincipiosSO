@@ -3,46 +3,65 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include "../Servidor/Algoritmos/Preprocessing_Algorithm.c"
-#include "../Servidor/Algoritmos/Count_Algorithm.c"
+#include "../Algoritmos/Preprocessing_Algorithm.c"
+#include "../Algoritmos/Count_Algorithm.c"
+#include <sys/stat.h>
+#include <sys/types.h>
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 9101
+#define PORT 9101
 #define BUFFER_SIZE 1024
 
 int main() {
-    int sock;
-    struct sockaddr_in server_addr;
-    char buffer[BUFFER_SIZE];
-    int bytes;
+    // Crear carpetas para organizar archivos
+    mkdir("Fragmentos", 0777);
+    mkdir("Preprocesados", 0777);
+    mkdir("Conteos", 0777);
 
-    sock = socket(AF_INET, SOCK_STREAM, 0);
+    int server_sock, client_sock;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t addr_size = sizeof(client_addr);
+
+    // Crear socket y asociarlo al puerto del nodo
+    server_sock = socket(AF_INET, SOCK_STREAM, 0);
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
-    inet_pton(AF_INET, SERVER_IP, &server_addr.sin_addr);
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(PORT);
 
-    printf("Nodo 1 conectando al servidor en puerto %d...\n", SERVER_PORT);
-    connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
+    listen(server_sock, 5);
 
-    // Recibir fragmento y guardarlo
-    FILE *fp = fopen("fragmento1.txt", "wb");
-    while ((bytes = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
-        fwrite(buffer, 1, bytes, fp);
+    printf("Nodo 1 esperando fragmento en el puerto %d...\n", PORT);
+
+    // Bucle principal: el nodo queda siempre disponible para nuevas tareas
+    while (1) {
+        // Esperar conexión del servidor principal
+        client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &addr_size);
+
+        // === 1. Recibir fragmento y guardarlo ===
+        FILE *fp = fopen("Fragmentos/fragmento1.txt", "wb");
+        char buffer[BUFFER_SIZE];
+        int bytes;
+        while ((bytes = recv(client_sock, buffer, BUFFER_SIZE, 0)) > 0) {
+            fwrite(buffer, 1, bytes, fp);
+        }
+        fclose(fp);
+
+        // === 2. Preprocesar y contar palabras ===
+        preprocess_file("Fragmentos/fragmento1.txt", "Preprocesados/fragmento_proc1.txt");
+        count_words("Preprocesados/fragmento_proc1.txt", "Conteos/conteo1.txt");
+
+        // === 3. Enviar archivo de conteo de vuelta al servidor ===
+        fp = fopen("Conteos/conteo1.txt", "rb");
+        while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
+            send(client_sock, buffer, bytes, 0);
+        }
+        fclose(fp);
+
+        // Cerrar conexión y quedar listo para la siguiente tarea
+        close(client_sock);
+        printf("Nodo 1 terminó procesamiento y espera nueva conexión.\n");
     }
-    fclose(fp);
 
-    // Procesar
-    preprocess_file("fragmento1.txt", "fragmento_proc1.txt");
-    count_words("fragmento_proc1.txt", "conteo1.txt");
-
-    // Enviar archivo de conteo de vuelta
-    fp = fopen("conteo1.txt", "rb");
-    while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
-        send(sock, buffer, bytes, 0);
-    }
-    fclose(fp);
-
-    close(sock);
-    printf("Nodo 1 terminó procesamiento.\n");
+    close(server_sock);
     return 0;
 }

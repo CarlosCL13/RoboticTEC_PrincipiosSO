@@ -5,34 +5,23 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
-#include "Algoritmos/Segmentation_Algorithm.c"
-#include "Algoritmos/Preprocessing_Algorithm.c"
-#include "Algoritmos/Count_Algorithm.c"
+#include "../Algoritmos/Segmentation_Algorithm.c"
+#include "../Algoritmos/Count_Algorithm.c"
 #include <sys/stat.h>
 #include <sys/types.h>
-
-
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define XOR_KEY 0xAA // Clave para el cifrado XOR
 #define MAX_WORDS_GLOBAL 30000
 
-/*
-    * Estructura para almacenar palabras y sus conteos globales
-    * Se usa un tamaño máximo de palabra y un número máximo de palabras globales
-*/
-
+// Estructura para almacenar palabras y sus conteos globales
 typedef struct {
     char word[MAX_WORD_LENGTH];
     int count;
 } WordGlobal;
 
-/* 
-    * Función para buscar una palabra en el arreglo de palabras globales
-    * Retorna el índice de la palabra si se encuentra, o -1 si no se encuentra
-*/
-
+// Busca una palabra en el arreglo global, retorna su índice o -1 si no está
 int find_word_global(WordGlobal words[], int total, const char *target) {
     for (int i = 0; i < total; i++) {
         if (strcmp(words[i].word, target) == 0) {
@@ -42,13 +31,8 @@ int find_word_global(WordGlobal words[], int total, const char *target) {
     return -1;
 }
 
-/*
-    * Función para combinar los conteos de palabras de tres archivos
-    * Recibe un arreglo de nombres de archivos y combina los conteos de palabras
-    * Encuentra la palabra más repetida entre los archivos y la imprime
-    * Esta función asume que los archivos están en el formato "palabra: conteo"
-*/
-
+// Combina los conteos de palabras de los tres archivos recibidos de los nodos
+// y encuentra la palabra más repetida globalmente
 void combine_counts(const char* count_files[3]) {
     WordGlobal global_words[MAX_WORDS_GLOBAL];
     int total_global = 0;
@@ -89,12 +73,61 @@ void xor_crypt(char *buffer, int length, char key) {
     }
 }
 
-// Función que maneja la conexión de cada cliente
+// Estructura para pasar argumentos a cada hilo de nodo
+typedef struct {
+    const char* ip;
+    int port;
+    const char* fragment_file;
+    const char* count_file;
+} NodoArgs;
+
+// ===================
+// FUNCIÓN CLAVE: Procesamiento paralelo con los nodos
+// ===================
+// Esta función se ejecuta en un hilo por cada nodo.
+// Se conecta al nodo, le envía el fragmento y recibe el conteo de palabras.
+void* procesar_nodo(void* arg) {
+    NodoArgs* nodo = (NodoArgs*)arg;
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in nodo_addr;
+    nodo_addr.sin_family = AF_INET;
+    nodo_addr.sin_port = htons(nodo->port);
+    inet_pton(AF_INET, nodo->ip, &nodo_addr.sin_addr);
+
+    printf("Conectando al nodo en puerto %d...\n", nodo->port);
+    // Reintenta la conexión hasta que el nodo esté disponible
+    while (connect(sock, (struct sockaddr *)&nodo_addr, sizeof(nodo_addr)) < 0) {
+        printf("Nodo en puerto %d no disponible, reintentando...\n", nodo->port);
+        sleep(1);
+    }
+
+    // Enviar fragmento al nodo
+    FILE *fp = fopen(nodo->fragment_file, "rb");
+    char buffer[BUFFER_SIZE];
+    int bytes;
+    while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
+        send(sock, buffer, bytes, 0);
+    }
+    fclose(fp);
+    shutdown(sock, SHUT_WR); // Señaliza fin de envío
+
+    // Recibir archivo de conteo del nodo
+    fp = fopen(nodo->count_file, "wb");
+    while ((bytes = recv(sock, buffer, BUFFER_SIZE, 0)) > 0) {
+        fwrite(buffer, 1, bytes, fp);
+    }
+    fclose(fp);
+    close(sock);
+    return NULL;
+}
+
+// ===================
+// FUNCIÓN CLAVE: Manejo de cada cliente principal (paralelismo con hilos)
+// ===================
 void *handle_client(void *arg) {
 
     // Crear directorios para almacenar los archivos procesados
     mkdir("Segmentados", 0777);
-    mkdir("Preprocesados", 0777);
     mkdir("Conteos", 0777);
 
     // Obtener el socket del cliente desde el argumento
@@ -135,10 +168,12 @@ void *handle_client(void *arg) {
 
     // 1. Segmentar el archivo desencriptado en tres partes
     Segmentation_Algorithm("archivo_recibido.txt");
-    // Los archivos segmentados se guardan en:
-    // "Segmentados/node1.txt", "Segmentados/node2.txt", "Segmentados/node3.txt"
 
-    // 2. Esperar a que cada nodo cliente se conecte, enviarle su fragmento y recibir el conteo
+    // ===================
+    // PARTE VITAL: Procesamiento distribuido y paralelo con los nodos
+    // ===================
+    // Se crean tres hilos, uno por cada nodo, para enviar fragmentos y recibir conteos en paralelo
+    const char* node_ips[3] = {"127.0.0.1", "127.0.0.1", "127.0.0.1"};
     const int node_ports[3] = {9101, 9102, 9103};
     const char* node_files[3] = {
         "Segmentados/node1.txt",
@@ -151,41 +186,20 @@ void *handle_client(void *arg) {
         "Conteos/count_node3.txt"
     };
 
+    pthread_t threads[3];
+    NodoArgs nodo_args[3];
+
     for (int i = 0; i < 3; i++) {
-        int server_sock, client_sock;
-        struct sockaddr_in server_addr, client_addr;
-        socklen_t addr_size = sizeof(client_addr);
-
-        server_sock = socket(AF_INET, SOCK_STREAM, 0);
-        server_addr.sin_family = AF_INET;
-        server_addr.sin_addr.s_addr = INADDR_ANY;
-        server_addr.sin_port = htons(node_ports[i]);
-
-        bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
-        listen(server_sock, 1);
-
-        printf("Esperando conexión de nodo %d en puerto %d...\n", i+1, node_ports[i]);
-        client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &addr_size);
-
-        // Enviar fragmento al nodo
-        FILE *fp = fopen(node_files[i], "rb");
-        char buffer[BUFFER_SIZE];
-        int bytes;
-        while ((bytes = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
-            send(client_sock, buffer, bytes, 0);
-        }
-        fclose(fp);
-        shutdown(client_sock, SHUT_WR); // Señal de fin de envío
-
-        // Recibir archivo de conteo del nodo
-        fp = fopen(count_files[i], "wb");
-        while ((bytes = recv(client_sock, buffer, BUFFER_SIZE, 0)) > 0) {
-            fwrite(buffer, 1, bytes, fp);
-        }
-        fclose(fp);
-
-        close(client_sock);
-        close(server_sock);
+        nodo_args[i].ip = node_ips[i];
+        nodo_args[i].port = node_ports[i];
+        nodo_args[i].fragment_file = node_files[i];
+        nodo_args[i].count_file = count_files[i];
+        // Cada hilo maneja la conexión y procesamiento con un nodo
+        pthread_create(&threads[i], NULL, procesar_nodo, &nodo_args[i]);
+    }
+    // Espera a que todos los hilos terminen (sincronización)
+    for (int i = 0; i < 3; i++) {
+        pthread_join(threads[i], NULL);
     }
 
     // 3. Combinar los conteos de palabras de los tres archivos
@@ -196,7 +210,9 @@ void *handle_client(void *arg) {
     return NULL;
 }
 
-// Función principal del servidor
+// ===================
+// FUNCIÓN PRINCIPAL DEL SERVIDOR
+// ===================
 int main() {
     int server_sock, *client_sock;
     struct sockaddr_in server_addr, client_addr;
@@ -212,17 +228,17 @@ int main() {
 
     // Asociar el socket a la dirección y puerto
     bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    // Escuchar conexiones entrantes
+    // Escuchar conexiones entrantes de clientes principales
     listen(server_sock, 5);
 
     printf("Servidor escuchando en el puerto %d...\n", PORT);
 
-    // Bucle principal para aceptar conexiones de clientes
+    // Bucle principal para aceptar conexiones de clientes principales
     while (1) {
         client_sock = malloc(sizeof(int));
         *client_sock = accept(server_sock, (struct sockaddr *)&client_addr, &addr_size);
         pthread_t tid;
-        // Crear un hilo para manejar cada cliente
+        // Cada cliente principal es manejado en un hilo independiente
         pthread_create(&tid, NULL, handle_client, client_sock);
         pthread_detach(tid); // Liberar recursos del hilo automáticamente al terminar
     }
