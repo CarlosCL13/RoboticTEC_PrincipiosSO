@@ -3,5 +3,6 @@
 
 int moveServo(short servo_num, short angulo);
 int reset_position_servos(void);
+int on_led(short señal);
 
 #endif
