@@ -39,7 +39,7 @@ void send_word_to_arduino(const char* word) {
 
     // Apaga el LED antes de enviar la palabra
     on_led(0);
-    usleep(1000); // Espera 1 s
+    sleep(2); // Espera 1 s
 
     for (size_t i = 0; i < strlen(word); i++) {
         unsigned char c = word[i];
@@ -53,9 +53,10 @@ void send_word_to_arduino(const char* word) {
             } else {
                 moveServo(2, 0);
             }
-            usleep(1000); // Espera 1 s
-            reset_position_servos();
-            usleep(1000); // Espera 1 s
+            usleep(300000); // Espera 0.3 s
+            moveServo(1, 45);
+            moveServo(2, 45);
+            usleep(300000); // Espera 0.3 s
         }
         printf("\n");
     }
