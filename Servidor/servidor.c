@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include "../Algoritmos/Segmentation_Algorithm.c"
 #include "../Algoritmos/Count_Algorithm.c"
+#include "../Arduino/Biblioteca/arduino_lib.h"
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -29,6 +30,40 @@ int find_word_global(WordGlobal words[], int total, const char *target) {
         }
     }
     return -1;
+}
+
+// Función para enviar una palabra a Arduino como binario
+// Esta función recibe una palabra, la convierte a su representación binaria
+void send_word_to_arduino(const char* word) {
+    printf("Enviando la palabra '%s' a Arduino como binario:\n", word);
+
+    // Apaga el LED antes de enviar la palabra
+    on_led(0);
+    usleep(1000); // Espera 1 s
+
+    for (size_t i = 0; i < strlen(word); i++) {
+        unsigned char c = word[i];
+        printf("Letra '%c' (ASCII %d): ", c, c);
+        
+        for (int bit = 7; bit >= 0; bit--) {
+            int value = (c >> bit) & 1;
+            printf("%d", value);
+            if (value == 0) {
+                moveServo(1, 0);
+            } else {
+                moveServo(2, 0);
+            }
+            usleep(1000); // Espera 1 s
+            reset_position_servos();
+            usleep(1000); // Espera 1 s
+        }
+        printf("\n");
+    }
+
+    // Enciende el LED al terminar de enviar la palabra
+    on_led(1);
+
+    printf("\n");
 }
 
 // Combina los conteos de palabras de los tres archivos recibidos de los nodos
@@ -64,7 +99,11 @@ void combine_counts(const char* count_files[3]) {
     }
     printf("La palabra más repetida es '%s' con %d apariciones.\n",
            global_words[max_idx].word, global_words[max_idx].count);
+
+    // Llama a la función para enviar la palabra a Arduino
+    send_word_to_arduino(global_words[max_idx].word);
 }
+
 
 // Función para encriptar/desencriptar usando XOR
 void xor_crypt(char *buffer, int length, char key) {
